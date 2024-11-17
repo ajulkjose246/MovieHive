@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:moviehive/screens/home_screen.dart';
 import 'package:google_nav_bar/google_nav_bar.dart';
+import 'package:moviehive/screens/movie_list.dart';
 import 'package:provider/provider.dart';
 import 'package:moviehive/providers/dashboard_provider.dart';
 
@@ -14,7 +15,7 @@ class Dashboard extends StatefulWidget {
 class _DashboardState extends State<Dashboard> {
   final List<Widget> _pages = [
     const HomeScreen(),
-    const Center(child: Text('List ', style: TextStyle(color: Colors.white))),
+    const MovieList(),
     const Center(child: Text('Saved', style: TextStyle(color: Colors.white))),
     const Center(child: Text('Profile', style: TextStyle(color: Colors.white))),
   ];
