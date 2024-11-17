@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:moviehive/providers/dashboard_provider.dart';
 import 'package:moviehive/screens/dash_board.dart';
 import 'package:moviehive/screens/movie_details.dart';
 
@@ -9,16 +11,18 @@ void main() {
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      routes: ({
-        '/': (context) => const Dashboard(),
-        '/movie_details': (context) => const MovieDetails(),
-      }),
-      initialRoute: '/',
+    return ChangeNotifierProvider(
+      create: (_) => DashboardProvider(),
+      child: MaterialApp(
+        debugShowCheckedModeBanner: false,
+        routes: ({
+          '/': (context) => const Dashboard(),
+          '/movie_details': (context) => const MovieDetails(),
+        }),
+        initialRoute: '/',
+      ),
     );
   }
 }
