@@ -32,7 +32,6 @@ class MyApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         routes: ({
           '/': (context) => const AuthPage(),
-          '/movie_details': (context) => const DetailsScreen(),
           '/signin': (context) => const SigninScreen(),
           '/signup': (context) => const SignupScreen(),
         }),

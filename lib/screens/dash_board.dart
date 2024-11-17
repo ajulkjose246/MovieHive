@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:moviehive/api/fetch_data.dart';
 import 'package:moviehive/screens/home_screen.dart';
 import 'package:google_nav_bar/google_nav_bar.dart';
 import 'package:moviehive/screens/list_screen.dart';
