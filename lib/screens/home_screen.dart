@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:moviehive/providers/dashboard_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:moviehive/providers/auth_provider.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -186,10 +187,18 @@ class _HomeScreenState extends State<HomeScreen> {
                         curve: Curves.easeInOut,
                       );
                     },
-                    child: const CircleAvatar(
+                    child: CircleAvatar(
                       radius: 20,
                       backgroundColor: Colors.grey,
-                      child: Icon(Icons.person, color: Colors.white),
+                      backgroundImage:
+                          context.watch<AuthProvider>().user?.photoURL != null
+                              ? NetworkImage(
+                                  context.watch<AuthProvider>().user!.photoURL!)
+                              : null,
+                      child:
+                          context.watch<AuthProvider>().user?.photoURL == null
+                              ? const Icon(Icons.person, color: Colors.white)
+                              : null,
                     ),
                   ),
                   Container(

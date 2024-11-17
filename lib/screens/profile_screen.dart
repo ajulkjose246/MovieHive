@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
 import '../providers/dashboard_provider.dart'; // Adjust the import path as needed
+import '../providers/auth_provider.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -12,7 +12,6 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn();
 
   Future<void> _handleLogout() async {
@@ -23,11 +22,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       // Sign out from Google
       await _googleSignIn.signOut();
-      // Sign out from Firebase
-      await _auth.signOut();
+      // Use AuthProvider instead of direct Firebase Auth
+      await Provider.of<AuthProvider>(context, listen: false).signOut();
 
       if (!mounted) return;
-      // Navigate to login screen and remove all previous routes
       Navigator.of(context)
           .pushNamedAndRemoveUntil('/signin', (route) => false);
     } catch (e) {
@@ -42,42 +40,46 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final user = Provider.of<AuthProvider>(context).user;
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
         child: SingleChildScrollView(
           child: Column(
             children: [
-              // Header with gradient
               Container(
                 height: 200,
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
-                    // Profile Picture
                     CircleAvatar(
                       radius: 60,
                       backgroundColor: Colors.white,
                       child: CircleAvatar(
                         radius: 57,
+                        backgroundImage: user?.photoURL != null
+                            ? NetworkImage(user!.photoURL!)
+                            : null,
                         backgroundColor: Theme.of(context).colorScheme.primary,
-                        child: const Icon(Icons.person,
-                            size: 60, color: Colors.white),
+                        child: user?.photoURL == null
+                            ? const Icon(Icons.person,
+                                size: 60, color: Colors.white)
+                            : null,
                       ),
                     ),
-                    // Edit button
                   ],
                 ),
               ),
 
               const SizedBox(height: 20),
-              // Name and Email
-              Text('John Doe',
+              // Updated name and email
+              Text(user?.displayName ?? 'Anonymous User',
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
                       )),
-              Text('john.doe@example.com',
+              Text(user?.email ?? 'No email',
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         color: Colors.grey[400],
                       )),
