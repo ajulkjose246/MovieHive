@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:provider/provider.dart';
+import '../providers/dashboard_provider.dart'; // Adjust the import path as needed
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -8,6 +12,34 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final GoogleSignIn _googleSignIn = GoogleSignIn();
+
+  Future<void> _handleLogout() async {
+    try {
+      // Reset dashboard index to 0
+      Provider.of<DashboardProvider>(context, listen: false)
+          .setSelectedIndex(0);
+
+      // Sign out from Google
+      await _googleSignIn.signOut();
+      // Sign out from Firebase
+      await _auth.signOut();
+
+      if (!mounted) return;
+      // Navigate to login screen and remove all previous routes
+      Navigator.of(context)
+          .pushNamedAndRemoveUntil('/signin', (route) => false);
+    } catch (e) {
+      print(e.toString());
+      // Show error message
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error signing out: ${e.toString()}')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -77,7 +109,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       icon: Icons.logout,
                       title: 'Logout',
                       subtitle: 'Sign out from your account',
-                      onTap: () {},
+                      onTap: _handleLogout,
                       isDestructive: true,
                     ),
                   ],

@@ -39,6 +39,9 @@ dependencies:
   change_app_package_name: ^1.4.0
   google_nav_bar: ^5.0.7
   provider: ^6.1.2
+  firebase_core: ^3.8.0
+  firebase_auth: ^5.3.3
+  google_sign_in: ^6.2.2
 
 dev_dependencies:
   flutter_test:

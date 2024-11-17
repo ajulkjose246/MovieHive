@@ -6,14 +6,14 @@ import 'package:moviehive/screens/profile_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:moviehive/providers/dashboard_provider.dart';
 
-class Dashboard extends StatefulWidget {
-  const Dashboard({super.key});
+class DashBoard extends StatefulWidget {
+  const DashBoard({super.key});
 
   @override
-  State<Dashboard> createState() => _DashboardState();
+  State<DashBoard> createState() => _DashBoardState();
 }
 
-class _DashboardState extends State<Dashboard> {
+class _DashBoardState extends State<DashBoard> {
   final List<Widget> _pages = [
     const HomeScreen(),
     const ListScreen(),
