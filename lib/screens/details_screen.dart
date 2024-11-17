@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 
-class MovieDetails extends StatefulWidget {
-  const MovieDetails({super.key});
+class DetailsScreen extends StatefulWidget {
+  const DetailsScreen({super.key});
 
   @override
-  State<MovieDetails> createState() => _MovieDetailsState();
+  State<DetailsScreen> createState() => _DetailsScreenState();
 }
 
-class _MovieDetailsState extends State<MovieDetails> {
+class _DetailsScreenState extends State<DetailsScreen> {
   // Add this method to show rating dialog
   void _showRatingDialog() {
     showDialog(
