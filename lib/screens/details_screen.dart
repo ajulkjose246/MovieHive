@@ -3,6 +3,7 @@ import 'package:moviehive/api/fetch_data.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:timeago/timeago.dart' as timeago;
 
 class DetailsScreen extends StatefulWidget {
   final int contentid;
@@ -29,12 +30,17 @@ class _DetailsScreenState extends State<DetailsScreen> {
   double _averageRating = 0;
   int _totalRatings = 0;
 
+  // Add these variables
+  final TextEditingController _commentController = TextEditingController();
+  List<Map<String, dynamic>> _comments = [];
+
   @override
   void initState() {
     super.initState();
     _movieDetailsFuture = _fetchAndCacheMovieDetails();
     _checkIfInWatchlist();
     _loadRatingData();
+    _loadComments();
   }
 
   Future<Map<String, dynamic>> _fetchAndCacheMovieDetails() async {
@@ -306,6 +312,213 @@ class _DetailsScreenState extends State<DetailsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  // Add this method to load comments
+  Future<void> _loadComments() async {
+    try {
+      final commentsSnapshot = await _firestore
+          .collection('movies')
+          .doc(widget.contentid.toString())
+          .collection('comments')
+          .orderBy('timestamp', descending: true)
+          .get();
+
+      if (mounted) {
+        setState(() {
+          _comments = commentsSnapshot.docs
+              .map((doc) => {
+                    ...doc.data(),
+                    'id': doc.id,
+                  })
+              .toList();
+        });
+      }
+    } catch (e) {
+      print('Error loading comments: $e');
+    }
+  }
+
+  // Replace the existing _showCommentDialog method
+  void _showCommentDialog() {
+    final user = _auth.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please login to add comments'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.grey[900],
+        title: Text('Add Comment', style: TextStyle(color: Colors.white)),
+        content: TextField(
+          controller: _commentController,
+          style: TextStyle(color: Colors.white),
+          maxLines: 3,
+          decoration: InputDecoration(
+            hintText: 'Write your comment...',
+            hintStyle: TextStyle(color: Colors.grey),
+            enabledBorder: OutlineInputBorder(
+              borderSide: BorderSide(color: Colors.grey),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderSide: BorderSide(color: Colors.white),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              _commentController.clear();
+              Navigator.pop(context);
+            },
+            child: Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () {
+              _submitComment();
+              Navigator.pop(context);
+            },
+            child: Text('Post', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Add this method to submit comments
+  Future<void> _submitComment() async {
+    if (_commentController.text.trim().isEmpty) return;
+
+    try {
+      final user = _auth.currentUser!;
+      final comment = {
+        'userId': user.uid,
+        'userName': user.displayName ?? 'Anonymous',
+        'userPhoto': user.photoURL,
+        'content': _commentController.text.trim(),
+        'timestamp': FieldValue.serverTimestamp(),
+      };
+
+      await _firestore
+          .collection('movies')
+          .doc(widget.contentid.toString())
+          .collection('comments')
+          .add(comment);
+
+      _commentController.clear();
+      _loadComments(); // Reload comments
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Comment posted successfully'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      print('Error posting comment: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error posting comment: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  // Replace the existing _buildCommentItem method
+  Widget _buildCommentItem(Map<String, dynamic> comment) {
+    final timestamp = comment['timestamp'] as Timestamp?;
+    final timeAgo =
+        timestamp != null ? timeago.format(timestamp.toDate()) : 'Just now';
+
+    return Container(
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: Colors.grey[800]!)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: Colors.grey[800],
+                backgroundImage: comment['userPhoto'] != null
+                    ? CachedNetworkImageProvider(comment['userPhoto'])
+                    : null,
+                child: comment['userPhoto'] == null
+                    ? Icon(Icons.person, color: Colors.white)
+                    : null,
+              ),
+              SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      comment['userName'] ?? 'Anonymous',
+                      style: TextStyle(
+                          color: Colors.white, fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      timeAgo,
+                      style: TextStyle(color: Colors.grey, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              if (comment['userId'] == _auth.currentUser?.uid)
+                IconButton(
+                  icon: Icon(Icons.delete_outline, color: Colors.grey),
+                  onPressed: () => _deleteComment(comment['id']),
+                ),
+            ],
+          ),
+          SizedBox(height: 8),
+          Text(
+            comment['content'] ?? '',
+            style: TextStyle(color: Colors.white),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Add this method to delete comments
+  Future<void> _deleteComment(String commentId) async {
+    try {
+      await _firestore
+          .collection('movies')
+          .doc(widget.contentid.toString())
+          .collection('comments')
+          .doc(commentId)
+          .delete();
+
+      _loadComments(); // Reload comments
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Comment deleted'),
+          backgroundColor: Colors.grey,
+        ),
+      );
+    } catch (e) {
+      print('Error deleting comment: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error deleting comment: ${e.toString()}'),
           backgroundColor: Colors.red,
         ),
       );
@@ -612,14 +825,21 @@ class _DetailsScreenState extends State<DetailsScreen> {
                                 color: Colors.grey[900],
                                 borderRadius: BorderRadius.circular(8),
                               ),
-                              child: ListView.builder(
-                                shrinkWrap: true,
-                                physics: NeverScrollableScrollPhysics(),
-                                itemCount:
-                                    2, // Replace with actual comments count
-                                itemBuilder: (context, index) =>
-                                    _buildCommentItem(),
-                              ),
+                              child: _comments.isEmpty
+                                  ? Padding(
+                                      padding: EdgeInsets.all(16),
+                                      child: Text(
+                                        'No comments yet. Be the first to comment!',
+                                        style: TextStyle(color: Colors.grey),
+                                      ),
+                                    )
+                                  : ListView.builder(
+                                      shrinkWrap: true,
+                                      physics: NeverScrollableScrollPhysics(),
+                                      itemCount: _comments.length,
+                                      itemBuilder: (context, index) =>
+                                          _buildCommentItem(_comments[index]),
+                                    ),
                             ),
                             const SizedBox(height: 16),
 
@@ -796,86 +1016,6 @@ class _DetailsScreenState extends State<DetailsScreen> {
           const SizedBox(height: 8),
           Text(name, style: TextStyle(color: Colors.white)),
           Text(character, style: TextStyle(color: Colors.grey, fontSize: 12)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCommentItem() {
-    return Container(
-      padding: EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: Colors.grey[800]!)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 20,
-                backgroundColor: Colors.grey[800],
-                child: Icon(Icons.person, color: Colors.white),
-              ),
-              SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'User Name',
-                    style: TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.bold),
-                  ),
-                  Text(
-                    '2 days ago',
-                    style: TextStyle(color: Colors.grey, fontSize: 12),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          SizedBox(height: 8),
-          Text(
-            'This movie was amazing! The action scenes were incredible.',
-            style: TextStyle(color: Colors.white),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showCommentDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.grey[900],
-        title: Text('Add Comment', style: TextStyle(color: Colors.white)),
-        content: TextField(
-          style: TextStyle(color: Colors.white),
-          maxLines: 3,
-          decoration: InputDecoration(
-            hintText: 'Write your comment...',
-            hintStyle: TextStyle(color: Colors.grey),
-            enabledBorder: OutlineInputBorder(
-              borderSide: BorderSide(color: Colors.grey),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderSide: BorderSide(color: Colors.white),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancel', style: TextStyle(color: Colors.grey)),
-          ),
-          TextButton(
-            onPressed: () {
-              // Handle adding comment logic here
-              Navigator.pop(context);
-            },
-            child: Text('Post', style: TextStyle(color: Colors.white)),
-          ),
         ],
       ),
     );
