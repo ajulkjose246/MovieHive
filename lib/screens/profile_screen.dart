@@ -3,6 +3,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
 import '../providers/dashboard_provider.dart'; // Adjust the import path as needed
 import '../providers/auth_provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -59,7 +60,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       child: CircleAvatar(
                         radius: 57,
                         backgroundImage: user?.photoURL != null
-                            ? NetworkImage(user!.photoURL!)
+                            ? CachedNetworkImageProvider(user!.photoURL!)
                             : null,
                         backgroundColor: Theme.of(context).colorScheme.primary,
                         child: user?.photoURL == null

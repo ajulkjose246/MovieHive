@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:moviehive/api/fetch_data.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class DetailsScreen extends StatefulWidget {
   final int contentid;
@@ -12,11 +15,56 @@ class DetailsScreen extends StatefulWidget {
 class _DetailsScreenState extends State<DetailsScreen> {
   late Future<Map<String, dynamic>> _movieDetailsFuture;
   final MovieApiService _apiService = MovieApiService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  // Add this state variable
+  bool _isInWatchlist = false;
+
+  // Add caching mechanism
+  static final Map<int, Map<String, dynamic>> _cache = {};
 
   @override
   void initState() {
     super.initState();
-    _movieDetailsFuture = _apiService.fetchMovieDetails(widget.contentid);
+    _movieDetailsFuture = _fetchAndCacheMovieDetails();
+    _checkIfInWatchlist();
+  }
+
+  Future<Map<String, dynamic>> _fetchAndCacheMovieDetails() async {
+    // Check cache first
+    if (_cache.containsKey(widget.contentid)) {
+      return _cache[widget.contentid]!;
+    }
+
+    // If not in cache, fetch and store
+    final data = await _apiService.fetchMovieDetails(widget.contentid);
+    _cache[widget.contentid] = data;
+    return data;
+  }
+
+  // Add this method to check watchlist status
+  Future<void> _checkIfInWatchlist() async {
+    try {
+      final user = _auth.currentUser;
+      if (user != null) {
+        final docSnapshot = await _firestore
+            .collection('users')
+            .doc(user.uid)
+            .collection('watchlist')
+            .doc(widget.contentid.toString())
+            .get();
+
+        if (mounted) {
+          setState(() {
+            _isInWatchlist = docSnapshot.exists;
+            print('Watchlist status: $_isInWatchlist');
+          });
+        }
+      }
+    } catch (e) {
+      print('Error checking watchlist: $e');
+    }
   }
 
   // Add this method to show rating dialog
@@ -46,6 +94,74 @@ class _DetailsScreenState extends State<DetailsScreen> {
     );
   }
 
+  // Add this method to handle save movie action
+  Future<void> _handleSaveMovie() async {
+    try {
+      final User? user = _auth.currentUser;
+      if (user == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please login to save movies'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      final watchlistRef = _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('watchlist')
+          .doc(widget.contentid.toString());
+
+      if (_isInWatchlist) {
+        // Remove from watchlist
+        await watchlistRef.delete();
+        if (mounted) {
+          setState(() {
+            _isInWatchlist = false;
+            print('Removed from watchlist');
+          });
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Removed from watchlist'),
+            backgroundColor: Colors.grey,
+          ),
+        );
+      } else {
+        // Add to watchlist
+        final movieData = await _movieDetailsFuture;
+        await watchlistRef.set({
+          'contentid': widget.contentid,
+          'title': movieData['title'],
+          'posterPath': movieData['poster_path'],
+          'addedAt': FieldValue.serverTimestamp(),
+        });
+        if (mounted) {
+          setState(() {
+            _isInWatchlist = true;
+            print('Added to watchlist');
+          });
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Added to watchlist'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error saving movie: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -53,14 +169,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
         future: _movieDetailsFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return Container(
-              color: Colors.black,
-              child: Center(
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                ),
-              ),
-            );
+            return _buildLoadingSkeleton();
           }
           if (snapshot.hasError) {
             return Center(child: Text('Error: ${snapshot.error}'));
@@ -83,7 +192,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
                 decoration: BoxDecoration(
                   image: DecorationImage(
                     image: posterPath != null
-                        ? NetworkImage(posterUrl) as ImageProvider
+                        ? CachedNetworkImageProvider(posterUrl) as ImageProvider
                         : AssetImage('assets/img/test_poster.jpg'),
                     fit: BoxFit.cover,
                     alignment: Alignment.topCenter,
@@ -243,22 +352,60 @@ class _DetailsScreenState extends State<DetailsScreen> {
                               ),
                             const SizedBox(height: 20),
 
-                            // Rate Button
-                            ElevatedButton(
-                              onPressed: _showRatingDialog,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.grey[800],
-                                minimumSize: Size(double.infinity, 50),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.star_outline, color: Colors.white),
-                                  SizedBox(width: 8),
-                                  Text('Rate',
-                                      style: TextStyle(color: Colors.white)),
-                                ],
-                              ),
+                            // Rate and Save Buttons
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: ElevatedButton(
+                                    onPressed: _showRatingDialog,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.grey[800],
+                                      minimumSize: Size(0, 50),
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.star_outline,
+                                            color: Colors.white),
+                                        SizedBox(width: 8),
+                                        Text('Rate',
+                                            style:
+                                                TextStyle(color: Colors.white)),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(width: 10),
+                                Expanded(
+                                  child: ElevatedButton(
+                                    onPressed: _handleSaveMovie,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: _isInWatchlist
+                                          ? Colors.red[600]
+                                          : Colors.grey[800],
+                                      minimumSize: Size(0, 50),
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          _isInWatchlist
+                                              ? Icons.bookmark
+                                              : Icons.bookmark_border,
+                                          color: Colors.white,
+                                        ),
+                                        SizedBox(width: 8),
+                                        Text(
+                                          _isInWatchlist ? 'Remove' : 'Save',
+                                          style: TextStyle(color: Colors.white),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                             const SizedBox(height: 20),
 
@@ -366,6 +513,98 @@ class _DetailsScreenState extends State<DetailsScreen> {
     );
   }
 
+  Widget _buildLoadingSkeleton() {
+    return Stack(
+      children: [
+        // Skeleton for poster
+        Container(
+          height: MediaQuery.of(context).size.height * 0.4,
+          color: Colors.grey[800],
+        ),
+
+        SingleChildScrollView(
+          child: Column(
+            children: [
+              SizedBox(height: MediaQuery.of(context).size.height * 0.35),
+              Container(
+                decoration: const BoxDecoration(
+                  color: Colors.black,
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(20),
+                    topRight: Radius.circular(20),
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Skeleton for rating
+                      Container(
+                        width: 100,
+                        height: 24,
+                        color: Colors.grey[800],
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Skeleton for duration and year
+                      Row(
+                        children: [
+                          Container(
+                            width: 80,
+                            height: 16,
+                            color: Colors.grey[800],
+                          ),
+                          const SizedBox(width: 20),
+                          Container(
+                            width: 60,
+                            height: 16,
+                            color: Colors.grey[800],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Skeleton for title
+                      Container(
+                        width: double.infinity,
+                        height: 30,
+                        color: Colors.grey[800],
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Skeleton for overview
+                      Column(
+                        children: List.generate(
+                            3,
+                            (index) => Container(
+                                  width: double.infinity,
+                                  height: 16,
+                                  margin: EdgeInsets.only(bottom: 8),
+                                  color: Colors.grey[800],
+                                )),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Back Button
+        Positioned(
+          top: 40,
+          left: 10,
+          child: IconButton(
+            icon: Icon(Icons.arrow_back, color: Colors.white),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
+      ],
+    );
+  }
+
   List<Widget> _buildCastList(Map<String, dynamic> movieData) {
     final imdbDetails =
         movieData['imdb_details']?['main']?['cast']?['edges'] as List?;
@@ -395,7 +634,8 @@ class _DetailsScreenState extends State<DetailsScreen> {
         children: [
           CircleAvatar(
             radius: 30,
-            backgroundImage: imageUrl != null ? NetworkImage(imageUrl) : null,
+            backgroundImage:
+                imageUrl != null ? CachedNetworkImageProvider(imageUrl) : null,
             backgroundColor: Colors.grey,
             child: imageUrl == null
                 ? Icon(Icons.person, color: Colors.white)

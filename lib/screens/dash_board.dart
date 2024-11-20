@@ -4,6 +4,7 @@ import 'package:moviehive/screens/home_screen.dart';
 import 'package:google_nav_bar/google_nav_bar.dart';
 import 'package:moviehive/screens/list_screen.dart';
 import 'package:moviehive/screens/profile_screen.dart';
+import 'package:moviehive/screens/watchlist_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:moviehive/providers/dashboard_provider.dart';
 
@@ -18,7 +19,7 @@ class _DashBoardState extends State<DashBoard> {
   final List<Widget> _pages = [
     const HomeScreen(),
     const ListScreen(),
-    const Center(child: Text('Saved', style: TextStyle(color: Colors.white))),
+    const WatchlistScreen(),
     const ProfileScreen(),
   ];
 
