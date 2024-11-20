@@ -24,11 +24,17 @@ class _DetailsScreenState extends State<DetailsScreen> {
   // Add caching mechanism
   static final Map<int, Map<String, dynamic>> _cache = {};
 
+  // Add these variables
+  double? _userRating;
+  double _averageRating = 0;
+  int _totalRatings = 0;
+
   @override
   void initState() {
     super.initState();
     _movieDetailsFuture = _fetchAndCacheMovieDetails();
     _checkIfInWatchlist();
+    _loadRatingData();
   }
 
   Future<Map<String, dynamic>> _fetchAndCacheMovieDetails() async {
@@ -67,31 +73,175 @@ class _DetailsScreenState extends State<DetailsScreen> {
     }
   }
 
-  // Add this method to show rating dialog
+  // Add this method to load rating data
+  Future<void> _loadRatingData() async {
+    try {
+      final user = _auth.currentUser;
+      if (user != null) {
+        // Get user's rating
+        final userRatingDoc = await _firestore
+            .collection('movies')
+            .doc(widget.contentid.toString())
+            .collection('ratings')
+            .doc(user.uid)
+            .get();
+
+        if (userRatingDoc.exists && mounted) {
+          setState(() {
+            _userRating = userRatingDoc.data()?['rating']?.toDouble();
+          });
+        }
+      }
+
+      // Get movie rating stats
+      final movieDoc = await _firestore
+          .collection('movies')
+          .doc(widget.contentid.toString())
+          .get();
+
+      if (movieDoc.exists && mounted) {
+        setState(() {
+          _averageRating = movieDoc.data()?['averageRating']?.toDouble() ?? 0;
+          _totalRatings = movieDoc.data()?['totalRatings'] ?? 0;
+        });
+      }
+    } catch (e) {
+      print('Error loading rating data: $e');
+    }
+  }
+
+  // Replace the existing _showRatingDialog method
   void _showRatingDialog() {
+    double selectedRating = _userRating ?? 0;
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: Colors.grey[900],
         title: Text('Rate this movie', style: TextStyle(color: Colors.white)),
-        content: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: List.generate(
-            5,
-            (index) => IconButton(
-              icon: Icon(
-                Icons.star,
-                color: Colors.amber,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(
+                5,
+                (index) => IconButton(
+                  icon: Icon(
+                    index < selectedRating ? Icons.star : Icons.star_border,
+                    color: Colors.amber,
+                    size: 32,
+                  ),
+                  onPressed: () {
+                    selectedRating = index + 1;
+                    (context as Element).markNeedsBuild();
+                  },
+                ),
               ),
-              onPressed: () {
-                // Handle rating logic here
-                Navigator.pop(context);
-              },
             ),
-          ),
+            if (_userRating != null)
+              Text(
+                'Your previous rating: ${_userRating!.toStringAsFixed(1)}',
+                style: TextStyle(color: Colors.grey),
+              ),
+          ],
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () {
+              _submitRating(selectedRating);
+              Navigator.pop(context);
+            },
+            child: Text('Submit', style: TextStyle(color: Colors.white)),
+          ),
+        ],
       ),
     );
+  }
+
+  // Add this method to submit the rating
+  Future<void> _submitRating(double rating) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please login to rate movies'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      final movieRef =
+          _firestore.collection('movies').doc(widget.contentid.toString());
+      final userRatingRef = movieRef.collection('ratings').doc(user.uid);
+
+      // Start a batch write
+      final batch = _firestore.batch();
+
+      // Add or update user's rating
+      batch.set(userRatingRef, {
+        'rating': rating,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      // Get all ratings to calculate new average
+      final ratingsSnapshot = await movieRef.collection('ratings').get();
+      double totalRating = rating; // Include the new rating
+      int totalCount = 1;
+
+      // Sum up existing ratings (excluding the user's previous rating if it exists)
+      for (var doc in ratingsSnapshot.docs) {
+        if (doc.id != user.uid) {
+          totalRating += doc.data()['rating'];
+          totalCount++;
+        }
+      }
+
+      // Calculate new average
+      final newAverage = totalRating / totalCount;
+
+      // Update movie document with new stats
+      batch.set(
+          movieRef,
+          {
+            'averageRating': newAverage,
+            'totalRatings': totalCount,
+          },
+          SetOptions(merge: true));
+
+      // Commit the batch
+      await batch.commit();
+
+      // Update state
+      if (mounted) {
+        setState(() {
+          _userRating = rating;
+          _averageRating = newAverage;
+          _totalRatings = totalCount;
+        });
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Rating submitted successfully'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      print('Error submitting rating: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error submitting rating: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   // Add this method to handle save movie action
@@ -246,6 +396,8 @@ class _DetailsScreenState extends State<DetailsScreen> {
                                         ),
                                       ],
                                     ),
+                                  const SizedBox(height: 8),
+                                  _buildRatingStats(),
                                   const SizedBox(height: 12),
 
                                   // Duration and Release Year Row
@@ -739,5 +891,31 @@ class _DetailsScreenState extends State<DetailsScreen> {
         : 0;
 
     return '${hours}:${minutes.toString().padLeft(2, '0')}min';
+  }
+
+  // In your build method, add this widget where you want to display the rating stats
+  Widget _buildRatingStats() {
+    return Row(
+      children: [
+        Icon(Icons.star, color: Colors.amber, size: 20),
+        SizedBox(width: 4),
+        Text(
+          '${_averageRating.toStringAsFixed(1)}/5',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        SizedBox(width: 8),
+        Text(
+          '($_totalRatings ${_totalRatings == 1 ? 'rating' : 'ratings'})',
+          style: TextStyle(
+            color: Colors.grey,
+            fontSize: 14,
+          ),
+        ),
+      ],
+    );
   }
 }
